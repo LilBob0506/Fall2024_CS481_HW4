@@ -26,8 +26,8 @@ To Run: mpiexec -n <comm_sz> ./life_mpi <board_sz> <max_iter> <output_file>
 void Check_for_error(int local_ok, char fname[], char message[], MPI_Comm comm);
 void Allocate_vectors(int** local_x_pp, int** local_y_pp, int** local_z_pp, int local_n, MPI_Comm comm);
 void Allocate_vectors_for_life(int** local_x_pp, int local_n, int n, MPI_Comm comm);
-void Read_vector(int local_a[], int *counts, int *displs, int n, char vec_name[], int my_rank, MPI_Comm comm);
-void Print_vector(int local_b[], int *counts, int *displs, int n, char title[], int my_rank, MPI_Comm comm);
+void Read_vector(int local_a[], int *counts, int *displs, int n, char *outfile, char vec_name[], int my_rank, MPI_Comm comm);
+void Print_vector(int local_b[], int *counts, int *displs, int n, char *outfile, char title[], int my_rank, MPI_Comm comm);
 void Parallel_vector_sum(int local_x[], int local_y[], int local_z[], int local_n);
 void Print_local_vector( int local_b[],int *counts,char title[],int my_rank,      MPI_Comm  comm);
 void compute_local(int local_x[], int n, int NTIMES, int counts[], int *displs, int my_rank,int comm_sz, MPI_Comm  comm);
@@ -50,7 +50,8 @@ void printarray(int **a, int row,int col, int k) {
   }
   printf("\n");
 }
-void printarray_1d(int *a, int N, int k) {
+
+void printarray_1d(int *a, int N, int k, char* outfile) {
   int i, j;
   printf("Life after %d iterations:\n", k) ;
   for (i = 0; i < N; i++) {
@@ -60,6 +61,28 @@ void printarray_1d(int *a, int N, int k) {
   }
   printf("\n");
 }
+
+/*
+void printarray_1d(int *a, int N, int k, char* outfile) {
+  int i, j;
+
+  FILE *file = fopen(outfile, "w");
+
+  if (file == NULL) {
+    printf("Failed to create the file.\n");
+    return;
+  }
+
+  printf("Life after %d iterations:\n", k) ;
+  for (i = 0; i < N; i++) {
+    for (j = 0; j< N; j++)
+      fprintf(file, "%d ", a[i*N+j]);
+    fprintf(file, "\n");
+  }
+  fprintf(file, "\n");
+}
+*/
+
 int **allocarray(int P, int Q) {
   int i, *p, **a;
 
@@ -132,7 +155,7 @@ int main(int argc, char **argv) {
    int *local_x;
 
    int NTIMES;
-   //char *outfile;
+   char *outfile;
   
    MPI_Comm comm;
    int *displs;
@@ -144,7 +167,7 @@ int main(int argc, char **argv) {
 
    n = atoi(argv[1]);
    NTIMES = atoi(argv[2]);
-  //outfile = argv[3];
+   outfile = argv[3];
   
   
    /* compute counts and displacements */
@@ -174,11 +197,11 @@ int main(int argc, char **argv) {
     
     Allocate_vectors_for_life(&local_x, local_n,n, comm);
    
-    Read_vector(local_x, counts, displs, n, "x", my_rank, comm);
+    Read_vector(local_x, counts, displs, n, outfile, "x", my_rank, comm);
    
     compute_local(local_x, n, NTIMES, counts, displs, my_rank,comm_sz,comm);
 
-    Print_vector(local_x, counts, displs, n, "x", my_rank, comm);
+    Print_vector(local_x, counts, displs, n, outfile, "x", my_rank, comm);
    
     free(local_x);
   
@@ -306,6 +329,7 @@ void Read_vector(
       int       counts[]    /* in  */, 
       int       displs[]    /* in  */, 
       int       n           /* in  */,
+      char      *outfile,
       char      vec_name[]  /* in  */,
       int       my_rank     /* in  */, 
       MPI_Comm  comm        /* in  */) {
@@ -335,7 +359,7 @@ void Read_vector(
     #ifdef DEBUG4
         printf("rank=%d\n",my_rank);
         /* Display the life matrix */
-        printarray_1d(a, n, 0);
+        printarray_1d(a, n, 0, outfile);
     #endif
       //scanf("%lf", &a[i]);
           MPI_Scatterv(a, counts, displs, MPI_INT, local_a, local_n, MPI_INT, 0,
@@ -354,6 +378,7 @@ void Print_vector(
       int counts[], 
       int displs[], 
       int n, 
+      char *outfile,
       char title[], 
       int my_rank, 
       MPI_Comm comm) {
@@ -377,7 +402,7 @@ void Print_vector(
         #ifdef DEBUG4
         printf("rank=%d\n",my_rank);
         /* Display the life matrix */
-        printarray_1d(a, n, 1);
+        printarray_1d(a, n, n, outfile);
     #endif
 
 
@@ -531,11 +556,7 @@ void compute_local(
   // printf("\n----After change-----\n");
    //print_life(life,nRowsGhost,nColsGhost,my_rank,local_n);
   
-    /* copy the new values to the old array */
-    /*ptr = life;
-    life = temp;
-    temp = ptr;
-    */
+    
 #ifdef DEBUG2
     /* Print no. of cells alive after the current iteration */
     printf("No. of cells whose value changed in iteration %d = %d\n",k+1,flag) ;
@@ -551,6 +572,13 @@ void compute_local(
     printf("Time taken %f seconds for %d iterations\n", t2 - t1, k);
 
   }
+
+  for (i = 0; i < local_n; i++) {
+    row = i / n + 1;  
+    col = i % n + 1;  
+    local_x[i] = life[row][col];
+}
+
    
    freearray(life);
    freearray(temp);
