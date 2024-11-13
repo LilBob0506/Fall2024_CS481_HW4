@@ -1,5 +1,11 @@
 #!/bin/bash
-cd Fall2024_CS481_HW4
-module --ignore_cache load openmpi/4.0.5-gnu-pmi2
-mpicc -g -Wall -o life_mpi life_mpi.c
-srun --mpi=pmi2 -n <comm_sz> ./life_mpi <board_sz> <max_iter> /scratch/ualclsd0193
+
+cd /home/ualclsd0193/Fall2024_CS481_HW4
+
+source /apps/profiles/modules_asax.sh.dyn
+module load openmpi/4.1.4-gcc11
+mpicc -g -Wall -O -o life_mpi life_mpi.c
+
+mpirun -np 1 ./life_mpi 5000 5000 /scratch/ualclsd0193/
+mpirun -np 1 ./life_mpi 5000 5000 /scratch/ualclsd0193/
+mpirun -np 1 ./life_mpi 5000 5000 /scratch/ualclsd0193/
