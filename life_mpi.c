@@ -12,13 +12,14 @@ Email: sssahib@crimson.ua.edu
 Course Section: CS 481-001
 Homework #: 4
 To Compile: mpicc -g -Wall -o life_mpi life_mpi.c
-To Run: mpiexec -n <comm_sz> ./life_mpi <board_sz> <max_iter> <output_file>
+To Run: mpiexec -n <comm_sz> ./life_mpi <board_sz> <max_iter> scratch/ualclsd0193/
 */
 
 #include <stdio.h>
 #include <stdlib.h>
 #include <mpi.h>
 #include <sys/time.h>
+#include <string.h>
 
 #define DIES   0
 #define ALIVE  1
@@ -28,10 +29,9 @@ void Allocate_vectors(int** local_x_pp, int** local_y_pp, int** local_z_pp, int 
 void Allocate_vectors_for_life(int** local_x_pp, int local_n, int n, MPI_Comm comm);
 void Read_vector(int local_a[], int *counts, int *displs, int n, char *outfile, char vec_name[], int my_rank, MPI_Comm comm);
 void Print_vector(int local_b[], int *counts, int *displs, int n, char *outfile, char title[], int my_rank, MPI_Comm comm);
-void Parallel_vector_sum(int local_x[], int local_y[], int local_z[], int local_n);
-void Print_local_vector( int local_b[],int *counts,char title[],int my_rank,      MPI_Comm  comm);
 void compute_local(int local_x[], int n, int NTIMES, int counts[], int *displs, int my_rank,int comm_sz, MPI_Comm  comm);
 
+char *outfile;
 
 double gettime(void) {
   struct timeval tval;
@@ -51,7 +51,7 @@ void printarray(int **a, int row,int col, int k) {
   printf("\n");
 }
 
-void printarray_1d(int *a, int N, int k, char* outfile) {
+void printarray_1d(int *a, int N, int k) {
   int i, j;
   printf("Life after %d iterations:\n", k) ;
   for (i = 0; i < N; i++) {
@@ -98,6 +98,60 @@ void freearray(int **a) {
   free(&a[0][0]);
   free(a);
 }
+
+void file_write(char* path, int **A, int m, int n,int iterations, int P){
+   
+    const char* name = path;
+    const char* extension = ".txt";
+    char size[5];
+    snprintf(size, 5, "%d", n);
+    char iter[5];
+    snprintf(iter, 5, "%d", iterations);
+    char p_char[5];
+    snprintf(p_char, 5, "%d", P);
+    
+
+    char* name_with_extension;
+    name_with_extension = malloc(strlen(name)+1+25); /* make space for the new string (should check the return value ...) */
+    strcpy(name_with_extension, name); /* copy name into the new var */
+    strcat(name_with_extension,"output");
+    strcat(name_with_extension,".");
+    strcat(name_with_extension,size);
+    strcat(name_with_extension,".");
+    strcat(name_with_extension,iter);
+  
+    strcat(name_with_extension,".");
+    strcat(name_with_extension,p_char);
+
+    strcat(name_with_extension, extension); /* add the extension */
+    
+    
+    // Open file in write mode
+    FILE *file = fopen(name_with_extension, "w");
+
+    // Check if file creation is successful
+    if (file == NULL) {
+        printf("Failed to create the file.\n");
+        return ;
+    }
+   
+    for(int i=0;i<n;i++){
+       for(int j=0;j<n;j++){
+          // Write something to the file
+         fprintf(file, " %d ",A[i][j]);
+       }
+       fprintf(file, "\n");
+    }
+    
+
+    // Close the file
+    fclose(file);
+    //printf("File created successfully at %s\n", name_with_extension);
+   // free(name_with_extension);
+}
+
+
+
 
 void print_life(int **life,int nRowsGhost,int nColsGhost,int my_rank,int local_n){
 	int i,j;
@@ -155,7 +209,6 @@ int main(int argc, char **argv) {
    int *local_x;
 
    int NTIMES;
-   char *outfile;
   
    MPI_Comm comm;
    int *displs;
@@ -201,7 +254,7 @@ int main(int argc, char **argv) {
    
     compute_local(local_x, n, NTIMES, counts, displs, my_rank,comm_sz,comm);
 
-    Print_vector(local_x, counts, displs, n, outfile, "x", my_rank, comm);
+   // Print_vector(local_x, counts, displs, n, outfile, "x", my_rank, comm);
    
     free(local_x);
   
@@ -428,13 +481,10 @@ void compute_local(
       int       my_rank    /* in */,
       int       comm_sz    /* in */,
       MPI_Comm  comm       /* in */) {
-
-   //int* b = NULL;
+ 
    int i, j,local_n;
-   //int nCols=5;
-   //int local_ok = 1;
-   //int N, NTIMES;
    int **life=NULL, **temp=NULL, **ptr ;
+   int **final_board2D=NULL;
    local_n = counts[my_rank];
    int nCols=n;
    int nRows=local_n/n;
@@ -442,29 +492,34 @@ void compute_local(
    double t1, t2;
    int flag=1,k;
    
+  int *final_board=NULL;
+   if(my_rank==0){
+     
+     final_board=malloc(n*n*sizeof(int));
+   } 
+   
    MPI_Status status;
-  
+   MPI_Request request = MPI_REQUEST_NULL;
+
+
    int nRowsGhost=nRows+2;
    int nColsGhost=nCols+2;
    life = allocarray(nRowsGhost,nColsGhost);
    temp = allocarray(nRowsGhost,nColsGhost);
-   //printf("\n ---This is here n=%d rank=%d, local_n=%d nRowsGhost=%d nColsGhost=%d local_x[0]=%d\n",n,my_rank,local_n,nColsGhost,nColsGhost,local_x[0]);
-  // printf(" \ndddddd  rank=%d local_x[0]=%d\n",my_rank,local_x[0]);
+  
    
    int row=0;
    int col=0;
-   //life[0][nRows+1]=5;
-   //printf("\n--life[0][nRows+1]=%d\n",life[0][nRows+1]);
-   /* Initialize the boundaries of the life matrix */
+   
   for (i = 0; i < nRowsGhost; i++) {
 	  for(j=0;j<nColsGhost;j++){
      if(i==0 || j==0 ||i==nRowsGhost-1 ||j==nColsGhost-1)
-	 {life[i][j] = DIES ;
+	 {     life[i][j] = DIES ;
          temp[i][j]  = DIES ;
 	 }
   }
   }
-  //printf("\n--life[0][6]=%d\n",life[0][6]);
+  
   
    for (i = 0; i < local_n; i++){
 	   row=i/n;
@@ -472,67 +527,78 @@ void compute_local(
 	   // give space for ghost cell
 	   row=row+1;
 	   col=col+1;
-         #ifdef DEBUG3
+    #ifdef DEBUG3
 	   printf("\n----local_x[%d]=%d-----",i,local_x[i]);
-         #endif
+    #endif
 	   life[row][col]=local_x[i];
-         #ifdef DEBUG3
+    #ifdef DEBUG3
 	   printf(" life[%d][%d]= %d \n",row,col,life[row][col]);
-         #endif
+    #endif
    }
-
-   
    #ifdef DEBUG2
     printf("rank=%d\n",my_rank);
     /* Display the life matrix */
-    printarray(life, row,col, 0);
+    printarray(life, nRows,nCols, 0);
    #endif
    
-
    upper_rank = my_rank + 1;
    if (upper_rank >= comm_sz) upper_rank = MPI_PROC_NULL;
    down_rank = my_rank - 1;
    if (down_rank < 0) down_rank = MPI_PROC_NULL;
-   //int NTIMES=5;
-   if(my_rank==0){t1 = gettime();}
-  /* Play the game of life for given number of iterations */
-  for (k = 0; k < NTIMES && flag != 0; k++) {
-    flag = 0;
-     
-   if ((my_rank % 2) == 0) {
-	/* exchange up */
-	MPI_Sendrecv( &(life[nRows][0]), nColsGhost, MPI_INT, upper_rank, 0, 
-		      &(life[nRows+1][0]), nColsGhost, MPI_INT, upper_rank, 0, 
-		      comm, &status );
-    
-    }
-    else {
-	/* exchange down */
-	MPI_Sendrecv( &(life[1][0]), nColsGhost, MPI_INT, down_rank, 0,
-		      &(life[0][0]), nColsGhost, MPI_INT, down_rank, 0, 
-		      comm, &status );
-    }
-
-    /* Do the second set of exchanges */
-    if ((my_rank % 2) == 1) {
-	/* exchange up */
-	MPI_Sendrecv( &(life[nRows][0]), nColsGhost, MPI_INT, upper_rank, 1, 
-		      &(life[nRows+1][0]), nColsGhost, MPI_INT, upper_rank, 1, 
-		      comm, &status );
-    }
-    else {
-	/* exchange down */
-	MPI_Sendrecv( &(life[1][0]), nColsGhost, MPI_INT, down_rank, 1,
-		      &(life[0][0]), nColsGhost, MPI_INT, down_rank, 1, 
-		      comm, &status );
-    }
    
-  //print_life(life,nRowsGhost,nColsGhost,my_rank,local_n);
-//   if(my_rank==0){
-	  
-// 	 //int** serial_life=life;
-	 
-//   }
+   if(my_rank==0){
+      t1 = gettime();
+      }
+   /* Play the game of life for given number of iterations */
+    for (k = 0; k < NTIMES; k++) {
+      flag = 0;
+     
+      if ((my_rank % 2) == 0) {
+        /* exchange up */
+        MPI_Isend(&(life[nRows][0]),nColsGhost,MPI_INT,upper_rank,0,comm,&request);
+        MPI_Irecv(&(life[nRows+1][0]), nColsGhost, MPI_INT, upper_rank, 0,comm, &request );
+        
+        MPI_Wait(&request, &status);
+        // MPI_Sendrecv( &(life[nRows][0]), nColsGhost, MPI_INT, upper_rank, 0, 
+        //         &(life[nRows+1][0]), nColsGhost, MPI_INT, upper_rank, 0, 
+        //         comm, &status );
+          
+          }
+          else {
+        /* exchange down */
+        MPI_Isend(&(life[1][0]),nColsGhost,MPI_INT,down_rank,0,comm,&request);
+        MPI_Irecv(&(life[0][0]), nColsGhost, MPI_INT, down_rank, 0,comm, &request);
+        MPI_Wait(&request, &status); //blocks and waits for destination process to receive data
+        
+        // MPI_Sendrecv( &(life[1][0]), nColsGhost, MPI_INT, down_rank, 0,
+        //         &(life[0][0]), nColsGhost, MPI_INT, down_rank, 0, 
+        //         comm, &status );
+          }
+
+      /* Do the second set of exchanges */
+      if ((my_rank % 2) == 1) {
+        /* exchange up */
+        MPI_Isend(&(life[nRows][0]),nColsGhost,MPI_INT,upper_rank,0,comm,&request);
+	      MPI_Irecv(&(life[nRows+1][0]), nColsGhost, MPI_INT, upper_rank, 0,comm, &request );
+	      MPI_Wait(&request, &status); //blocks and waits for destination process to receive data
+	
+        // MPI_Sendrecv( &(life[nRows][0]), nColsGhost, MPI_INT, upper_rank, 1, 
+        //         &(life[nRows+1][0]), nColsGhost, MPI_INT, upper_rank, 1, 
+        //         comm, &status );
+          }
+      else {
+        /* exchange down */
+        MPI_Isend(&(life[1][0]),nColsGhost,MPI_INT,down_rank,0,comm,&request);
+        MPI_Irecv(&(life[0][0]), nColsGhost, MPI_INT, down_rank, 0,comm, &request);
+        MPI_Wait(&request, &status); //blocks and waits for destination process to receive data
+        
+        // MPI_Sendrecv( &(life[1][0]), nColsGhost, MPI_INT, down_rank, 1,
+        //         &(life[0][0]), nColsGhost, MPI_INT, down_rank, 1, 
+        //         comm, &status );
+        //   
+        }
+   
+  
    flag=compute(life,temp,nRows,nCols);
   
   
@@ -548,15 +614,16 @@ void compute_local(
     if(!reduction_flag){
       break;
     }
-    /* copy the new values to the old array */
-   ptr = life;
-   life = temp;
-   temp = ptr;
-   
-  // printf("\n----After change-----\n");
-   //print_life(life,nRowsGhost,nColsGhost,my_rank,local_n);
-  
+
+    MPI_Barrier(comm);
     
+    
+    /* copy the new values to the old array */
+    ptr = life;
+    life = temp;
+    temp = ptr;
+   
+  
 #ifdef DEBUG2
     /* Print no. of cells alive after the current iteration */
     printf("No. of cells whose value changed in iteration %d = %d\n",k+1,flag) ;
@@ -566,21 +633,43 @@ void compute_local(
 #endif
   }
 
+  for(int i=1;i<nRows+1;i++){
+    for(int j=1;j<nCols+1;j++){
+      local_x[(i-1)*n+(j-1)]=life[i][j];
+      // printf("local_x[%d]=%d\n",(i-1)*n+(j-1),local_x[(i-1)*n+(j-1)]);
+    }
+    }
 
-  if(my_rank==0){
-    t2 = gettime();
-    printf("Time taken %f seconds for %d iterations\n", t2 - t1, k);
-
-  }
-
-  for (i = 0; i < local_n; i++) {
-    row = i / n + 1;  
-    col = i % n + 1;  
-    local_x[i] = life[row][col];
-}
 
    
    freearray(life);
    freearray(temp);
+
+
+    MPI_Gatherv(local_x,local_n,MPI_INT,final_board,counts,displs,MPI_INT,0,comm);
+  
+  
+  if(my_rank==0){
+    #ifdef DEBUG2
+    printf("Final Board:\n");
+    printarray_1d(final_board, n, k+1);
+    #endif
+    final_board2D = allocarray(n,n);
+    for(int i=0;i<n;i++){
+      for(int j=0;j<n;j++){
+        final_board2D[i][j]=final_board[i*n+j];
+      }
+    }
+  }
+  
+  if(my_rank==0){
+    t2 = gettime();
+    printf("Time taken %f seconds for size=%dx%d %d iterations\n", t2 - t1, n,n,k);
+    //printf("%s\n",filePath);
+    file_write(outfile,final_board2D,n,n,NTIMES,comm_sz);
+    free(final_board);
+    freearray(final_board2D);
+  }
+  
    //freearray(ptr);
 }  /* Print_life */
