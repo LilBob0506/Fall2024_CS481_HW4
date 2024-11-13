@@ -1,0 +1,23 @@
+============================================================
+=====         Summary of your script job               =====
+============================================================
+  The script file is: myscript.sh
+  The time limit is 12:00:00 HH:MM:SS.
+  The target directory is: /home/ualclsd0193/Fall2024_CS481_HW4
+  The working directory is:  /scratch-local/ualclsd0193.16process.209415.asax-pbs1
+  The memory limit is: 16gb
+  The job will start running after: 202411131642.25
+  Job Name: 16process
+  Queue: -q class -W group_list=classq
+  Constraints:
+  Using  16  cores on master node  asax020.asc.edu
+  Node list:  asax020.asc.edu asax020.asc.edu asax020.asc.edu asax020.asc.edu asax020.asc.edu asax020.asc.edu asax020.asc.edu asax020.asc.edu asax020.asc.edu asax020.asc.edu asax020.asc.edu asax020.asc.edu asax020.asc.edu asax020.asc.edu asax020.asc.edu asax020.asc.edu
+  Cores:  16
+  Command typed:
+/scripts/run_script_mpi myscript.sh
+  Queue submit command:
+qsub -q class -W group_list=classq -j oe -N 16process -a 202411131642.25 -r n -M sssahib@crimson.ua.edu -l walltime=12:00:00 -l select=16:mpiprocs=1:mem=1000mb
+
+Time taken 28.196381 seconds for size=5000x5000 5000 iterations
+Time taken 28.052657 seconds for size=5000x5000 5000 iterations
+Time taken 28.237259 seconds for size=5000x5000 5000 iterations
